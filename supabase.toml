@@ -1,0 +1,7 @@
+[project]
+name = "jizhang-app"
+version = "0.1.0"
+
+[functions.backend]
+path = "."
+runtime = "docker"

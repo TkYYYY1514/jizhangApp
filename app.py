@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from dotenv import load_dotenv
 import os
@@ -19,14 +18,9 @@ app = Flask(__name__)
 
 # 配置
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{os.getenv('MYSQL_USER')}:{os.getenv('MYSQL_PASSWORD')}@{os.getenv('MYSQL_HOST')}:{os.getenv('MYSQL_PORT')}/{os.getenv('MYSQL_DB')}"
+app.config['SQLALCHEMY_DATABASE_URI'] = f"postgresql://{os.getenv('MYSQL_USER')}:{os.getenv('MYSQL_PASSWORD')}@{os.getenv('MYSQL_HOST')}:{os.getenv('MYSQL_PORT')}/{os.getenv('MYSQL_DB')}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 最大16MB
-
-# 确保上传目录存在
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # 初始化数据库和JWT
 db = SQLAlchemy(app)
@@ -175,100 +169,6 @@ def get_current_user():
         
     except Exception as e:
         return jsonify({'message': f'获取用户信息失败: {str(e)}'}), 500
-
-# 更新用户头像
-@app.route('/api/user/avatar', methods=['PUT'])
-@jwt_required()
-def update_avatar():
-    try:
-        current_user_id = get_jwt_identity()
-        # 确保用户ID是正确的整数类型，即使它是浮点数格式
-        user = User.query.get(int(float(current_user_id)))
-        
-        if not user:
-            return jsonify({'message': '用户不存在'}), 404
-            
-        data = request.get_json()
-        
-        if not data or not data.get('avatar'):
-            return jsonify({'message': '头像数据是必需的'}), 400
-        
-        try:
-            print(f"更新头像: 接收到头像数据类型: {type(data.get('avatar'))}")
-            # 解码base64图像数据
-            avatar_data = data['avatar']
-            if isinstance(avatar_data, str):
-                # 处理带有data URI头部的情况
-                if ',' in avatar_data:
-                    header, encoded = avatar_data.split(',', 1)
-                    print(f"更新头像: 检测到data URI头部: {header}")
-                else:
-                    encoded = avatar_data
-                
-                print("更新头像: 开始解码base64数据...")
-                # 解码base64数据
-                image_data = base64.b64decode(encoded)
-                print(f"更新头像: 解码完成，数据大小: {len(image_data)} bytes")
-                
-                # 创建图像
-                image = Image.open(BytesIO(image_data))
-                print(f"更新头像: 图像信息: 格式={image.format}, 大小={image.size}, 模式={image.mode}")
-                
-                # 确保图像是RGB模式
-                if image.mode in ('RGBA', 'LA', 'P'):
-                    # 转换为RGB并处理透明背景
-                    print("更新头像: 转换RGBA/LA/P模式图像为RGB...")
-                    background = Image.new('RGB', image.size, (255, 255, 255))
-                    background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
-                    image = background
-                elif image.mode != 'RGB':
-                    print(f"更新头像: 转换{image.mode}模式为RGB...")
-                    image = image.convert('RGB')
-                
-                # 生成文件名
-                filename = f"{user.username}_avatar.png"
-                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                print(f"更新头像: 文件路径: {filepath}")
-                
-                # 确保上传目录存在
-                os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-                
-                # 保存图像
-                image.save(filepath, 'PNG')
-                user.avatar_path = filepath
-                print(f"更新头像: 头像更新成功: {filepath}")
-            
-            # 更新数据库
-            db.session.commit()
-            
-            return jsonify({
-                'message': '头像更新成功',
-                'user': user.to_dict()
-            }), 200
-            
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({'message': f'头像处理失败: {str(e)}'}), 500
-        
-    except Exception as e:
-        return jsonify({'message': f'更新头像失败: {str(e)}'}), 500
-
-# 获取用户头像
-@app.route('/api/user/avatar/<int:user_id>', methods=['GET'])
-def get_avatar(user_id):
-    try:
-        user = User.query.get(user_id)
-        
-        if not user or not user.avatar_path:
-            return jsonify({'message': '头像不存在'}), 404
-            
-        if not os.path.exists(user.avatar_path):
-            return jsonify({'message': '头像文件不存在'}), 404
-            
-        return jsonify({'avatar_path': user.avatar_path}), 200
-        
-    except Exception as e:
-        return jsonify({'message': f'获取头像失败: {str(e)}'}), 500
 
 # 上传交易数据
 @app.route('/api/transactions/upload', methods=['POST'])
